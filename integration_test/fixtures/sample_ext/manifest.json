@@ -1,0 +1,4 @@
+{"manifest_version":3,"name":"Sample","version":"1.0.0","permissions":["storage"],
+ "host_permissions":["https://*.cinder-test.example/*"],
+ "content_scripts":[{"matches":["https://*.cinder-test.example/*"],"js":["content.js"],"css":["content.css"],"run_at":"document_start"}],
+ "action":{"default_popup":"popup.html","default_title":"Sample"}}

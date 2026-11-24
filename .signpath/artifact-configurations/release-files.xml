@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "release-files": a zip of the Flutter Release folder.
+     Sign only Cinder's own binaries; other DLLs keep their publishers' signatures. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="saboor_browser.exe">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="rust_lib_saboor_browser.dll">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="app_links_plugin.dll">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="url_launcher_windows_plugin.dll">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="webview_flutter_windows_plugin.dll">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="flutter_windows.dll">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
