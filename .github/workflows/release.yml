@@ -20,6 +20,8 @@ env:
 
 jobs:
   build-sign:
+    # Only run once SignPath is configured; otherwise a tag push would fail at signing.
+    if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
