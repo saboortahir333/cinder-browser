@@ -10,7 +10,7 @@
 ; They are only run when the PC does not already have them.
 
 #define AppName "Cinder Browser"
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
 #define AppExe "saboor_browser.exe"
 #define BuildDir "build\windows\x64\runner\Release"
 
@@ -70,6 +70,23 @@ Source: "installer_deps\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+
+[Registry]
+; Make Cinder appear in Windows Settings > Default apps (Windows itself requires
+; the user to choose it there; installers may not set the default silently).
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser"; ValueType: string; ValueName: ""; ValueData: "Cinder Browser"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExe},0"
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"""
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Cinder Browser"
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "A private, extensible browser built on WebView2."
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: "{app}\{#AppExe},0"
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser\Capabilities\URLAssociations"; ValueType: string; ValueName: "http"; ValueData: "CinderBrowserURL"
+Root: HKLM; Subkey: "Software\Clients\StartMenuInternet\Cinder Browser\Capabilities\URLAssociations"; ValueType: string; ValueName: "https"; ValueData: "CinderBrowserURL"
+Root: HKLM; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "Cinder Browser"; ValueData: "Software\Clients\StartMenuInternet\Cinder Browser\Capabilities"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "Software\Classes\CinderBrowserURL"; ValueType: string; ValueName: ""; ValueData: "Cinder Browser URL"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\CinderBrowserURL"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKLM; Subkey: "Software\Classes\CinderBrowserURL\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExe},0"
+Root: HKLM; Subkey: "Software\Classes\CinderBrowserURL\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
 
 [Run]
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Installing Microsoft Visual C++ runtime..."; Flags: waituntilterminated; Check: NeedsVCRedist

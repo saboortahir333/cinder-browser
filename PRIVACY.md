@@ -17,3 +17,10 @@ Cinder is a desktop browser built on Microsoft Edge WebView2.
   for engine-level behaviour.
 
 Cinder does not include analytics or advertising.
+
+## Update check
+Once a day (not in private windows) Cinder asks GitHub's public API whether a
+newer release exists (`api.github.com/repos/saboortahir333/cinder-browser/releases/latest`).
+No account data is sent, and nothing is downloaded or installed automatically:
+you are only told a new version exists and can open its release page. GitHub
+sees your IP address and a `Cinder/<version>` user agent, as for any web request.

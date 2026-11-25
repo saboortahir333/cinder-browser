@@ -37,7 +37,12 @@ class LaunchOptions {
     this.isPrivate = false,
     this.profileId = 'default',
     this.devToolsPort = 0,
+    this.startUrl,
   });
+
+  /// Address passed on the command line (e.g. a link opened from another app).
+  /// Only http(s) is accepted; everything still goes through UrlPolicy.
+  final String? startUrl;
 
   /// Random loopback port chosen by the native runner for DevTools (0 = none).
   final int devToolsPort;
@@ -56,12 +61,18 @@ class LaunchOptions {
     var isPrivate = false;
     var profile = 'default';
     var devToolsPort = 0;
+    String? startUrl;
     for (final arg in args) {
       if (arg == '--private') {
         isPrivate = true;
       } else if (arg.startsWith('--profile=')) {
         final value = arg.substring('--profile='.length).toLowerCase();
         if (_profileRe.hasMatch(value)) profile = value;
+      } else if (!arg.startsWith('-') && startUrl == null && arg.length <= 4096) {
+        final u = Uri.tryParse(arg);
+        if (u != null && (u.scheme == 'http' || u.scheme == 'https') && u.host.isNotEmpty) {
+          startUrl = arg;
+        }
       } else if (arg.startsWith('--cinder-devtools-port=')) {
         final port = int.tryParse(arg.substring('--cinder-devtools-port='.length));
         // Only the ephemeral range the runner picks from.
@@ -72,6 +83,7 @@ class LaunchOptions {
       isPrivate: isPrivate,
       profileId: profile,
       devToolsPort: devToolsPort,
+      startUrl: startUrl,
     );
   }
 }

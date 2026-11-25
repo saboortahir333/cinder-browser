@@ -34,6 +34,10 @@ import 'package:saboor_browser/ui/account_dialog.dart';
 import 'package:saboor_browser/ui/search_engine_dialog.dart';
 import 'package:saboor_browser/services/download_service.dart';
 import 'package:saboor_browser/extensions/extension_manager.dart';
+import 'package:saboor_browser/services/bookmark_import.dart';
+import 'package:saboor_browser/services/update_service.dart';
+import 'package:saboor_browser/utils/app_info.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:saboor_browser/extensions/extension_runtime.dart';
 import 'package:saboor_browser/extensions/permissions.dart';
 import 'package:saboor_browser/ui/extensions/extensions_manager.dart';
@@ -557,7 +561,13 @@ class _BrowserShellState extends State<BrowserShell>
     WidgetsBinding.instance.addObserver(this);
     _scheduleMidnightRefresh();
     unawaited(_loadWallpaper());
-    unawaited(_createTab());
+    unawaited(
+      _createTab(
+        url: AppServices.launch.startUrl,
+        source: NavSource.link,
+      ),
+    );
+    unawaited(_scheduleUpdateCheck());
     unawaited(_loadBookmarks());
     unawaited(_loadBookmarksBarPref());
     unawaited(_loadShortcuts());
@@ -1221,6 +1231,126 @@ class _BrowserShellState extends State<BrowserShell>
         );
       }
     } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // Updates, bookmark import, default browser, About
+  // ---------------------------------------------------------------------------
+  Timer? _updateTimer;
+
+  Future<void> _scheduleUpdateCheck() async {
+    if (_isPrivate) return;
+    // Once a day, a few seconds after start, never blocking the UI.
+    _updateTimer = Timer(const Duration(seconds: 8), () => unawaited(_dailyUpdateCheck()));
+  }
+
+  Future<void> _dailyUpdateCheck() async {
+    if (!mounted) return;
+    final last = DateTime.tryParse(
+      await PrefsStore.instance.getString('updates.lastCheck') ?? '',
+    );
+    if (last != null && DateTime.now().difference(last) < const Duration(hours: 24)) {
+      return;
+    }
+    await PrefsStore.instance.setString(
+      'updates.lastCheck',
+      DateTime.now().toUtc().toIso8601String(),
+    );
+    await _checkForUpdates(manual: false);
+  }
+
+  Future<void> _checkForUpdates({required bool manual}) async {
+    final info = await const UpdateService().check();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (info == null) {
+      if (manual) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Cinder is up to date.')),
+        );
+      }
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 15),
+        content: Text('Cinder ${info.version} is available.'),
+        action: SnackBarAction(
+          label: "What's new",
+          onPressed: () => unawaited(_createTab(url: info.pageUrl)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importBookmarks() async {
+    final picked = await FilePicker.pickFile(
+      dialogTitle: 'Choose a bookmarks file exported from Chrome, Edge or Firefox',
+      type: FileType.custom,
+      allowedExtensions: const ['html', 'htm'],
+    );
+    final path = picked?.path;
+    if (path == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final file = File(path);
+      if (file.lengthSync() > BookmarkImport.maxBytes) {
+        messenger.showSnackBar(const SnackBar(content: Text('That file is too large.')));
+        return;
+      }
+      final items = BookmarkImport.parse(await file.readAsString());
+      for (final b in items) {
+        await BookmarkService.instance.addBookmark(b.url, b.title);
+      }
+      await _loadBookmarks();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            items.isEmpty
+                ? 'No bookmarks were found in that file.'
+                : 'Imported ${items.length} bookmark${items.length == 1 ? '' : 's'}.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not read that file.')),
+        );
+      }
+    }
+  }
+
+  /// Windows does not let apps set the default browser themselves; open the
+  /// Default apps page where the user picks Cinder.
+  Future<void> _openDefaultAppsSettings() async {
+    await launchUrl(Uri.parse('ms-settings:defaultapps'));
+  }
+
+  void _showAbout() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _palette.chrome,
+        title: Text('Cinder $kAppVersion', style: TextStyle(color: _palette.ink)),
+        content: Text(
+          'A Windows browser built with Flutter and Microsoft Edge WebView2.\n\n'
+          'Open source (Apache-2.0).\n$kReleasesPage',
+          style: TextStyle(color: _palette.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              unawaited(_createTab(url: kReleasesPage));
+            },
+            child: const Text('Release notes'),
+          ),
+          TextButton(autofocus: true, onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -2644,6 +2774,7 @@ class _BrowserShellState extends State<BrowserShell>
 
   @override
   void dispose() {
+    _updateTimer?.cancel();
     _urlController.removeListener(_onUrlTextChanged);
     _urlFocusNode.removeListener(_onUrlFocusChanged);
     WidgetsBinding.instance.removeObserver(this);
@@ -4766,6 +4897,14 @@ class _BrowserShellState extends State<BrowserShell>
             unawaited(showSearchEngineDialog(context, _palette));
           case 'devtools':
             unawaited(_openDevTools());
+          case 'import-bookmarks':
+            unawaited(_importBookmarks());
+          case 'default-browser':
+            unawaited(_openDefaultAppsSettings());
+          case 'check-updates':
+            unawaited(_checkForUpdates(manual: true));
+          case 'about':
+            _showAbout();
         }
       },
       itemBuilder: (context) {
@@ -4832,6 +4971,11 @@ class _BrowserShellState extends State<BrowserShell>
           item('appearance', Icons.palette_outlined, 'Themes & wallpapers'),
           item('search-engine', Icons.manage_search_rounded, 'Search engine…'),
           item('devtools', Icons.code_rounded, 'Developer tools', 'F12'),
+          const PopupMenuDivider(),
+          item('import-bookmarks', Icons.file_upload_outlined, 'Import bookmarks…'),
+          item('default-browser', Icons.open_in_browser_rounded, 'Make Cinder your default browser'),
+          item('check-updates', Icons.system_update_alt_rounded, 'Check for updates'),
+          item('about', Icons.info_outline_rounded, 'About Cinder $kAppVersion'),
         ];
       },
     );
