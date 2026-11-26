@@ -64,6 +64,7 @@
     --animate-float: float 7s ease-in-out infinite;
     --animate-shimmer: shimmer 6s linear infinite;
     --animate-pulse-glow: pulse-glow 4s ease-in-out infinite;
+    --animate-marquee: marquee 42s linear infinite;
 
     @keyframes float {
         0%, 100% { transform: translateY(0); }
@@ -75,6 +76,9 @@
     @keyframes pulse-glow {
         0%, 100% { opacity: 0.55; transform: scale(1); }
         50% { opacity: 0.9; transform: scale(1.06); }
+    }
+    @keyframes marquee {
+        to { transform: translateX(-50%); }
     }
 }
 
@@ -180,6 +184,11 @@
   }
   p { text-wrap: pretty; }
   ::selection { background: rgba(255, 138, 61, 0.35); }
+  :focus-visible { outline: 2px solid var(--color-ember-500); outline-offset: 3px; }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-ember-500) 45%, transparent) transparent;
+  }
 }
 
 @layer utilities {

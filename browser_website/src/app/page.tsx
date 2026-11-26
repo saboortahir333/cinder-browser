@@ -2,9 +2,12 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { trustFacts, notYet } from "@/lib/content";
 import { Hero } from "@/components/sections/hero";
+import { Marquee } from "@/components/sections/marquee";
+import { Faq } from "@/components/sections/faq";
 import { FeatureBands } from "@/components/sections/feature-grid";
 import { CtaBand } from "@/components/sections/cta-band";
 import { Reveal } from "@/components/brand/reveal";
+import { SpotlightCard } from "@/components/brand/interactions";
 
 const layers = [
   {
@@ -29,12 +32,17 @@ export default function Home() {
   return (
     <>
       <Hero />
+      <Marquee />
 
-      <section aria-label="What Cinder promises" className="mx-auto max-w-6xl px-4 sm:px-6">
+      <section
+        id="trust"
+        aria-label="What Cinder promises"
+        className="mx-auto mt-14 max-w-6xl scroll-mt-24 px-4 sm:px-6"
+      >
         <Reveal>
           <ul className="grid gap-px overflow-hidden rounded-3xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
             {trustFacts.map((t) => (
-              <li key={t.label} className="bg-card/80 p-6 backdrop-blur">
+              <li key={t.label} className="bg-card/80 p-6 backdrop-blur transition-colors hover:bg-card">
                 <p className="flex items-center gap-2 font-display text-lg font-bold">
                   <HugeiconsIcon icon={CheckmarkCircle02Icon} size={20} className="text-primary" />
                   {t.label}
@@ -72,12 +80,14 @@ export default function Home() {
         </Reveal>
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {layers.map((l, i) => (
-            <Reveal key={l.title} delay={i * 0.08}>
-              <div className="card-lift h-full rounded-3xl border border-border bg-card/70 p-6">
-                <p className="font-display text-sm font-bold text-primary">0{i + 1}</p>
-                <h3 className="mt-2 text-xl font-bold">{l.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{l.body}</p>
-              </div>
+            <Reveal key={l.title} delay={i * 0.08} className="h-full">
+              <SpotlightCard className="card-lift h-full rounded-3xl border border-border bg-card/70">
+                <div className="p-6">
+                  <p className="font-display text-sm font-bold text-primary">0{i + 1}</p>
+                  <h3 className="mt-2 text-xl font-bold">{l.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{l.body}</p>
+                </div>
+              </SpotlightCard>
             </Reveal>
           ))}
         </div>
@@ -105,6 +115,7 @@ export default function Home() {
         </Reveal>
       </section>
 
+      <Faq />
       <CtaBand />
     </>
   );

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { site } from "@/lib/site-config";
 import { Reveal } from "@/components/brand/reveal";
+import { SpotlightCard } from "@/components/brand/interactions";
 
 export const metadata: Metadata = {
   title: "Privacy",
@@ -68,13 +69,33 @@ export default function PrivacyPage() {
         added, they will be opt-in, off by default, and never active in private windows.
       </p>
 
+      <ul className="mt-8 flex flex-wrap gap-3" aria-label="At a glance">
+        {["No analytics", "No ads", "No telemetry", "Encrypted sync"].map((t) => (
+          <li
+            key={t}
+            className="flex items-center gap-2 rounded-full border border-ember-500/40 bg-ember-500/10 px-4 py-2 text-sm font-semibold"
+          >
+            <span
+              aria-hidden="true"
+              className="grid size-5 place-items-center rounded-full bg-flame text-[11px] text-[#1c0a03]"
+            >
+              ✓
+            </span>
+            {t}
+          </li>
+        ))}
+      </ul>
+
       <div className="mt-12 grid gap-4 sm:grid-cols-2">
         {modes.map((m, i) => (
-          <Reveal key={m.title} delay={i * 0.06}>
-            <section className="card-lift h-full rounded-3xl border border-border bg-card/70 p-6">
-              <h2 className="text-xl font-bold">{m.title}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{m.body}</p>
-            </section>
+          <Reveal key={m.title} delay={i * 0.06} className="h-full">
+            <SpotlightCard className="card-lift h-full rounded-3xl border border-border bg-card/70">
+              <section className="p-6">
+                <p className="font-display text-sm font-bold text-primary">0{i + 1}</p>
+                <h2 className="mt-1 text-xl font-bold">{m.title}</h2>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{m.body}</p>
+              </section>
+            </SpotlightCard>
           </Reveal>
         ))}
       </div>

@@ -248,7 +248,7 @@ export function FeatureBands({
             key={f.id}
             id={f.id}
             aria-labelledby={`${f.id}-title`}
-            className="grid items-center gap-10 md:grid-cols-2 md:gap-16"
+            className="grid scroll-mt-32 items-center gap-10 md:grid-cols-2 md:gap-16"
           >
             <Reveal className={cn(i % 2 === 1 && "md:order-2")}>
               <div className="flex items-center gap-3">

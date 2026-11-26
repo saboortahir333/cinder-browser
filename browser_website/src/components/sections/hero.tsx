@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useTransform } from "motion/react";
+import { motion, useScroll, useTransform } from "motion/react";
 import { useReducedMotion } from "@/components/brand/use-reduced-motion";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Download01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
@@ -10,6 +10,7 @@ import { Mascot } from "@/components/brand/mascot";
 import { EmberField } from "@/components/brand/ember-field";
 import { usePointer } from "@/components/brand/pointer";
 import { CtaLink } from "@/components/site/cta-link";
+import { Magnetic } from "@/components/brand/interactions";
 import { BrowserWindow } from "./browser-window";
 
 const WORDS_A = ["Burn", "the", "trackers."];
@@ -38,6 +39,9 @@ export function Hero() {
   const { x, y } = usePointer();
   const rotY = useTransform(x, [-1, 1], [-5, 5]);
   const rotX = useTransform(y, [-1, 1], [3, -3]);
+  const reduce = useReducedMotion();
+  const { scrollY } = useScroll();
+  const flameY = useTransform(scrollY, [0, 700], [0, -70]);
 
   return (
     <section className="relative isolate overflow-hidden">
@@ -81,10 +85,12 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 0.95 }}
             className="mt-8 flex flex-wrap items-center gap-3"
           >
-            <CtaLink href="/download">
-              <HugeiconsIcon icon={Download01Icon} size={20} />
-              Download for Windows
-            </CtaLink>
+            <Magnetic>
+              <CtaLink href="/download">
+                <HugeiconsIcon icon={Download01Icon} size={20} />
+                Download for Windows
+              </CtaLink>
+            </Magnetic>
             <CtaLink href="/features" tone="outline">
               See what&apos;s inside
               <HugeiconsIcon icon={ArrowRight01Icon} size={18} />
@@ -109,7 +115,12 @@ export function Hero() {
               <EmberField count={48} />
             </div>
 
-            <EmberMark className="absolute -left-2 top-2 z-0 w-36 sm:w-48" title="" />
+            <motion.div
+              className="absolute -left-2 top-2 z-0 w-36 sm:w-48"
+              style={reduce ? undefined : { y: flameY }}
+            >
+              <EmberMark className="w-full" title="" />
+            </motion.div>
 
             <div className="absolute inset-x-0 bottom-0 z-10 h-[var(--win-h)] [perspective:1200px]">
               <motion.div className="h-full w-full" style={{ rotateY: rotY, rotateX: rotX }}>
@@ -124,6 +135,17 @@ export function Hero() {
           </p>
         </div>
       </div>
+      <a
+        href="#trust"
+        aria-label="Scroll to the next section"
+        className="absolute bottom-5 left-1/2 hidden -translate-x-1/2 text-muted-foreground transition-colors hover:text-primary lg:block"
+      >
+        <span className="animate-float grid size-10 place-items-center rounded-full border border-border bg-card/60 backdrop-blur">
+          <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </span>
+      </a>
     </section>
   );
 }

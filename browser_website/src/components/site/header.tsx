@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion, useScroll, useSpring } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -19,9 +20,16 @@ import { Button } from "@/components/ui/button";
 export function Header() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { scrollYProgress } = useScroll();
+  const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 24, mass: 0.3 });
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur-xl">
+      <motion.div
+        aria-hidden="true"
+        className="absolute inset-x-0 bottom-[-1px] h-[2px] origin-left bg-flame"
+        style={{ scaleX: progress }}
+      />
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link
           href="/"
