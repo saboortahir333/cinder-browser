@@ -546,7 +546,13 @@ class _BrowserShellState extends State<BrowserShell>
 
   /// Starts HTTPS-only, tracker blocking and the deceptive-site list once the
   /// first WebView exists (its DevTools port is what the filter attaches to).
+  static const bool _shieldsCompiledOut = bool.fromEnvironment('CINDER_NO_SHIELDS');
+
   Future<void> _startShields() async {
+    if (_shieldsCompiledOut) {
+      if (!_shieldsReady.isCompleted) _shieldsReady.complete();
+      return;
+    }
     try {
       _requestPolicy.httpsOnly = await PrefsStore.instance.getBool('shield_https_only') ?? true;
       _requestPolicy.blockTrackers = await PrefsStore.instance.getBool('shield_trackers') ?? true;
