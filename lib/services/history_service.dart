@@ -32,7 +32,7 @@ class HistoryService {
   }
 
   /// Records a page visit (http/https only).
-  Future<void> recordVisit(String url, String title, {bool isPqc = false}) async {
+  Future<void> recordVisit(String url, String title) async {
     if (url.isEmpty || url.length > _maxUrlLength) return;
     final decision = UrlPolicy.checkNavigation(url, NavSource.restore);
     if (decision.isBlocked || decision.kind != NavKind.web) return;
@@ -45,7 +45,6 @@ class HistoryService {
       'title': cleanTitle.isEmpty ? decision.url : cleanTitle,
       'last_visited_at': DateTime.now().toUtc().toIso8601String(),
       'visit_count': (count is int ? count : 0) + 1,
-      'is_pqc_verified': isPqc,
     });
     _prune(_history, maxEntries, 'last_visited_at');
   }
@@ -75,15 +74,6 @@ class HistoryService {
   Future<void> clearHistory() async {
     await _cloud.clearKind(_history);
     await _cloud.clearKind(_search);
-  }
-
-  Future<void> updatePqcStatus(String url, {required bool isPqcVerified}) async {
-    final decision = UrlPolicy.checkNavigation(url, NavSource.restore);
-    if (decision.isBlocked) return;
-    final id = _cloud.idFor(_history, decision.url);
-    final record = _cloud.get(_history, id);
-    if (record == null) return;
-    _cloud.put(_history, id, {...record, 'is_pqc_verified': isPqcVerified});
   }
 
   List<Map<String, dynamic>> _sorted(String kind, String timeKey, int limit) {

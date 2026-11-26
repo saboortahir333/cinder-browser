@@ -13,7 +13,6 @@ class DownloadItem {
   DateTime startedAt;
   DateTime? completedAt;
   String? errorMessage;
-  bool isPqcVerified;
 
   double speedBytesPerSec = 0.0;
   DateTime _lastSpeedCalcTime = DateTime.now();
@@ -31,7 +30,6 @@ class DownloadItem {
     DateTime? startedAt,
     this.completedAt,
     this.errorMessage,
-    this.isPqcVerified = false,
   }) : startedAt = startedAt ?? DateTime.now();
 
   double get progress =>
@@ -66,7 +64,6 @@ class DownloadItem {
       'started_at': startedAt.toIso8601String(),
       'completed_at': completedAt?.toIso8601String(),
       'error_message': errorMessage,
-      'is_pqc_verified': isPqcVerified,
     };
   }
 
@@ -90,7 +87,6 @@ class DownloadItem {
           ? DateTime.tryParse(map['completed_at'].toString())
           : null,
       errorMessage: map['error_message']?.toString(),
-      isPqcVerified: map['is_pqc_verified'] == true,
     );
   }
 }

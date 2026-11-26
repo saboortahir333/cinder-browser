@@ -44,6 +44,8 @@ import 'package:saboor_browser/ui/extensions/extensions_manager.dart';
 import 'package:saboor_browser/services/history_service.dart';
 import 'package:saboor_browser/services/settings_sync_service.dart';
 import 'package:saboor_browser/utils/constants.dart';
+import 'package:saboor_browser/security/site_permissions.dart';
+import 'package:saboor_browser/ui/site_permissions_ui.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -485,6 +487,64 @@ class _BrowserShellState extends State<BrowserShell>
   bool get _isPrivate => AppServices.launch.isPrivate;
   bool get _persists => !_isPrivate && AppServices.cloud.isSyncing;
 
+  late final SitePermissionStore _sitePerms = SitePermissionStore(
+    cloud: AppServices.cloud,
+    isPrivate: _isPrivate,
+  );
+
+  /// Serialises prompts: one dialog at a time, later requests reuse its answer.
+  Future<void> _permissionQueue = Future.value();
+
+  Future<WebviewPermissionDecision> _onPermissionRequested(
+    String url,
+    WebviewPermissionKind kind,
+    bool userInitiated,
+  ) async {
+    final perm = SitePermission.fromKind(kind);
+    if (perm == null) return WebviewPermissionDecision.deny;
+    final origin = SitePermissionStore.originOf(url);
+    if (origin == null) return WebviewPermissionDecision.deny;
+    final completer = Completer<WebviewPermissionDecision>();
+    _permissionQueue = _permissionQueue.then((_) async {
+      // Re-evaluate inside the queue: an earlier prompt may have settled it.
+      final outcome = _sitePerms.evaluate(url, perm, userInitiated: userInitiated);
+      if (outcome != PermissionOutcome.askUser || !mounted) {
+        completer.complete(outcome == PermissionOutcome.allow
+            ? WebviewPermissionDecision.allow
+            : WebviewPermissionDecision.deny);
+        return;
+      }
+      final answer = await showPermissionPrompt(
+        context,
+        _palette,
+        origin,
+        perm,
+        isPrivate: _isPrivate,
+      );
+      if (answer == null) {
+        completer.complete(WebviewPermissionDecision.deny);
+        return;
+      }
+      _sitePerms.record(origin, perm, answer.decision, remember: answer.remember);
+      completer.complete(answer.decision == SiteDecision.allow
+          ? WebviewPermissionDecision.allow
+          : WebviewPermissionDecision.deny);
+    });
+    return completer.future;
+  }
+
+  void _showSiteInfo(_BrowserTab tab) {
+    final origin = SitePermissionStore.originOf(tab.url);
+    if (origin == null) return;
+    unawaited(showSiteInfoDialog(
+      context,
+      _palette,
+      _sitePerms,
+      origin,
+      _connectionSecurityMessage(tab),
+    ));
+  }
+
   static const Duration _autoSleepAfter = Duration(minutes: 30);
   DateTime _backgroundDate = _dateOnly(DateTime.now());
   String? _wallpaperUrl;
@@ -573,6 +633,7 @@ class _BrowserShellState extends State<BrowserShell>
     unawaited(_loadShortcuts());
     unawaited(_loadHistoryCache());
     unawaited(_initExtensions());
+    unawaited(_sitePerms.load());
     // Fetch download history from Supabase (Zero local SQLite / disk cache)
     unawaited(DownloadService.instance.initialize());
 
@@ -633,6 +694,7 @@ class _BrowserShellState extends State<BrowserShell>
       _loadWallpaper(),
       _loadHistoryCache(),
       DownloadService.instance.fetchHistoryFromCloud(),
+      _sitePerms.load(),
     ]);
   }
 
@@ -1533,7 +1595,7 @@ class _BrowserShellState extends State<BrowserShell>
                     child: ValueListenableBuilder<bool>(
                       valueListenable: s.ready,
                       builder: (context, ready, _) => ready
-                          ? Webview(s.controller)
+                          ? Webview(s.controller, permissionRequested: (_, __, ___) => WebviewPermissionDecision.deny)
                           : const Center(child: CircularProgressIndicator()),
                     ),
                   ),
@@ -2656,13 +2718,12 @@ class _BrowserShellState extends State<BrowserShell>
             final item = items[index];
             final url = item['url']?.toString() ?? '';
             final title = item['title']?.toString() ?? url;
-            final isPqc = item['is_pqc_verified'] == true;
             final timeStr = item['last_visited_at']?.toString() ?? '';
             return ListTile(
               dense: true,
               leading: Icon(
-                isPqc ? Icons.verified_user : Icons.language,
-                color: isPqc ? _palette.accent : _palette.muted,
+                Icons.language,
+                color: _palette.muted,
                 size: 20,
               ),
               title: Text(
@@ -3122,7 +3183,7 @@ class _BrowserShellState extends State<BrowserShell>
         // Fire-and-forget cloud sync — never blocks navigation and never
         // throws into this method (errors are swallowed inside the service).
         unawaited(
-          HistoryService.instance.recordVisit(target, tab.title, isPqc: false),
+          HistoryService.instance.recordVisit(target, tab.title),
         );
         if (isSearchQuery) {
           unawaited(
@@ -4126,7 +4187,7 @@ class _BrowserShellState extends State<BrowserShell>
                         ),
                       )
                     : (_devToolsReady && controller != null)
-                    ? Webview(controller)
+                    ? Webview(controller, permissionRequested: (_, __, ___) => WebviewPermissionDecision.deny)
                     : const Center(child: CircularProgressIndicator()),
               ),
             ],
@@ -4891,6 +4952,8 @@ class _BrowserShellState extends State<BrowserShell>
             unawaited(_toggleBookmarksBar());
           case 'extensions':
             unawaited(_showExtensionsDialog());
+          case 'site-permissions':
+            unawaited(showSitePermissionsManager(context, _palette, _sitePerms));
           case 'appearance':
             unawaited(_showAppearanceSettings());
           case 'search-engine':
@@ -4935,6 +4998,7 @@ class _BrowserShellState extends State<BrowserShell>
           item('history', Icons.history_rounded, 'History', 'Ctrl+H'),
           item('downloads', Icons.download_rounded, 'Downloads', 'Ctrl+J'),
           item('extensions', Icons.extension_outlined, 'Extensions'),
+          item('site-permissions', Icons.shield_outlined, 'Site permissions'),
           const PopupMenuDivider(),
           item('find', Icons.search_rounded, 'Find in page…', 'Ctrl+F'),
           item('print', Icons.print_outlined, 'Print…', 'Ctrl+P'),
@@ -5020,6 +5084,12 @@ class _BrowserShellState extends State<BrowserShell>
               children: [
                 Tooltip(
                   message: _connectionSecurityMessage(tab),
+                  child: Semantics(
+                    button: true,
+                    label: 'Site information and permissions',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: tab.url.isEmpty ? null : () => _showSiteInfo(tab),
                   child: Container(
                     margin: const EdgeInsets.only(left: 6),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -5030,6 +5100,8 @@ class _BrowserShellState extends State<BrowserShell>
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Icon(identityIcon, size: 15, color: identityColor),
+                  ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -5165,7 +5237,11 @@ class _BrowserShellState extends State<BrowserShell>
     return RepaintBoundary(
       child: SizedBox.expand(
         key: _pageKey,
-        child: Webview(tab.controller, key: ValueKey(tab.id)),
+        child: Webview(
+          tab.controller,
+          key: ValueKey(tab.id),
+          permissionRequested: _onPermissionRequested,
+        ),
       ),
     );
   }
