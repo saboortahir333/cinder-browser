@@ -554,14 +554,8 @@ class _BrowserShellState extends State<BrowserShell>
       _requestPolicy.malwareHosts = await _filterLists.loadCached();
       _requestPolicy.matcher = (url, src, type) =>
           rust_adblock.adblockShouldBlock(url: url, sourceUrl: src, requestType: type);
-      final port = AppServices.launch.devToolsPort;
-      if (port != 0) {
-        await _webviewUp.future.timeout(const Duration(seconds: 10), onTimeout: () {});
-        final f = RequestFilter(port: port, policy: _requestPolicy);
-        if (await f.start()) {
-          _requestFilter = f;
-        }
-      }
+      await _webviewUp.future.timeout(const Duration(seconds: 10), onTimeout: () {});
+      await _syncRequestFilter();
       if (!_shieldsReady.isCompleted) _shieldsReady.complete();
       if (await _filterLists.refreshIfStale() && mounted) {
         _requestPolicy.malwareHosts = await _filterLists.loadCached();
@@ -570,6 +564,23 @@ class _BrowserShellState extends State<BrowserShell>
       // Shields degrade silently; browsing keeps working.
     } finally {
       if (!_shieldsReady.isCompleted) _shieldsReady.complete();
+    }
+  }
+
+  bool get _anyShieldOn =>
+      _requestPolicy.httpsOnly || _requestPolicy.blockTrackers || _requestPolicy.blockMalware;
+
+  /// Attaches the request filter only while a protection is on, so turning
+  /// everything off removes it from the request path entirely.
+  Future<void> _syncRequestFilter() async {
+    final port = AppServices.launch.devToolsPort;
+    if (_anyShieldOn) {
+      if (port == 0 || _requestFilter != null) return;
+      final f = RequestFilter(port: port, policy: _requestPolicy);
+      if (await f.start()) _requestFilter = f;
+    } else {
+      _requestFilter?.dispose();
+      _requestFilter = null;
     }
   }
 
@@ -602,6 +613,7 @@ class _BrowserShellState extends State<BrowserShell>
       unawaited(PrefsStore.instance.setBool('shield_https_only', h));
       unawaited(PrefsStore.instance.setBool('shield_trackers', t));
       unawaited(PrefsStore.instance.setBool('shield_malware', m));
+      unawaited(_syncRequestFilter());
     },
   );
 
