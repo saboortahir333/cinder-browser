@@ -63,3 +63,8 @@ target/
 /inno_setup_real.exe
 /run_on_d.*
 .flutter-plugins-dependencies
+
+# cargo-fuzz artifacts
+rust/fuzz/target/
+rust/fuzz/corpus/
+rust/fuzz/artifacts/

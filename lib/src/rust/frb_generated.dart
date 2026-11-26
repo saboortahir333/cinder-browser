@@ -3,7 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
-import 'api/simple.dart';
+import 'api/adblock_engine.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -55,7 +55,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 
   @override
   Future<void> executeRustInitializers() async {
-    await api.crateApiSimpleInitApp();
+    await api.crateApiAdblockEngineInitApp();
   }
 
   @override
@@ -66,7 +66,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1833971970;
+  int get rustContentHash => 1140326985;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -78,18 +78,19 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
-  Future<String> crateApiSimpleFetchWebpage({
+  Future<List<String>> crateApiAdblockEngineAdblockHiddenSelectors({
     required String url,
-    required bool usePqc,
   });
 
-  String crateApiSimpleGreet({required String name});
+  Future<int> crateApiAdblockEngineAdblockLoad({required List<String> lists});
 
-  Future<void> crateApiSimpleInitApp();
+  bool crateApiAdblockEngineAdblockShouldBlock({
+    required String url,
+    required String sourceUrl,
+    required String requestType,
+  });
 
-  String crateApiSimpleInspectUrlSecurity({required String url});
-
-  Future<String> crateApiSimplePerformSecureConnection({required String url});
+  Future<void> crateApiAdblockEngineInitApp();
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -101,16 +102,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
-  Future<String> crateApiSimpleFetchWebpage({
+  Future<List<String>> crateApiAdblockEngineAdblockHiddenSelectors({
     required String url,
-    required bool usePqc,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(url, serializer);
-          sse_encode_bool(usePqc, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -119,46 +118,84 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
+          decodeSuccessData: sse_decode_list_String,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiSimpleFetchWebpageConstMeta,
-        argValues: [url, usePqc],
+        constMeta: kCrateApiAdblockEngineAdblockHiddenSelectorsConstMeta,
+        argValues: [url],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiSimpleFetchWebpageConstMeta => const TaskConstMeta(
-    debugName: "fetch_webpage",
-    argNames: ["url", "usePqc"],
-  );
+  TaskConstMeta get kCrateApiAdblockEngineAdblockHiddenSelectorsConstMeta =>
+      const TaskConstMeta(
+        debugName: "adblock_hidden_selectors",
+        argNames: ["url"],
+      );
 
   @override
-  String crateApiSimpleGreet({required String name}) {
+  Future<int> crateApiAdblockEngineAdblockLoad({required List<String> lists}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_String(lists, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiAdblockEngineAdblockLoadConstMeta,
+        argValues: [lists],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiAdblockEngineAdblockLoadConstMeta =>
+      const TaskConstMeta(debugName: "adblock_load", argNames: ["lists"]);
+
+  @override
+  bool crateApiAdblockEngineAdblockShouldBlock({
+    required String url,
+    required String sourceUrl,
+    required String requestType,
+  }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          sse_encode_String(url, serializer);
+          sse_encode_String(sourceUrl, serializer);
+          sse_encode_String(requestType, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
+          decodeSuccessData: sse_decode_bool,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiSimpleGreetConstMeta,
-        argValues: [name],
+        constMeta: kCrateApiAdblockEngineAdblockShouldBlockConstMeta,
+        argValues: [url, sourceUrl, requestType],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiSimpleGreetConstMeta =>
-      const TaskConstMeta(debugName: "greet", argNames: ["name"]);
+  TaskConstMeta get kCrateApiAdblockEngineAdblockShouldBlockConstMeta =>
+      const TaskConstMeta(
+        debugName: "adblock_should_block",
+        argNames: ["url", "sourceUrl", "requestType"],
+      );
 
   @override
-  Future<void> crateApiSimpleInitApp() {
+  Future<void> crateApiAdblockEngineInitApp() {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -166,7 +203,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -174,69 +211,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiSimpleInitAppConstMeta,
+        constMeta: kCrateApiAdblockEngineInitAppConstMeta,
         argValues: [],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiSimpleInitAppConstMeta =>
+  TaskConstMeta get kCrateApiAdblockEngineInitAppConstMeta =>
       const TaskConstMeta(debugName: "init_app", argNames: []);
-
-  @override
-  String crateApiSimpleInspectUrlSecurity({required String url}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(url, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiSimpleInspectUrlSecurityConstMeta,
-        argValues: [url],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSimpleInspectUrlSecurityConstMeta =>
-      const TaskConstMeta(debugName: "inspect_url_security", argNames: ["url"]);
-
-  @override
-  Future<String> crateApiSimplePerformSecureConnection({required String url}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(url, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 5,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiSimplePerformSecureConnectionConstMeta,
-        argValues: [url],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSimplePerformSecureConnectionConstMeta =>
-      const TaskConstMeta(
-        debugName: "perform_secure_connection",
-        argNames: ["url"],
-      );
 
   @protected
   String dco_decode_String(dynamic raw) {
@@ -251,9 +234,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<String> dco_decode_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -282,10 +277,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <String>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
   }
 
   @protected
@@ -318,6 +331,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -325,6 +347,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
   }
 
   @protected

@@ -1,0 +1,28 @@
+[package]
+name = "rust_lib_saboor_browser-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.rust_lib_saboor_browser]
+path = ".."
+
+[[bin]]
+name = "adblock_request"
+path = "fuzz_targets/adblock_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "adblock_rules"
+path = "fuzz_targets/adblock_rules.rs"
+test = false
+doc = false
+bench = false

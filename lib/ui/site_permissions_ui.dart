@@ -85,8 +85,12 @@ Future<void> showSiteInfoDialog(
   BrowserPalette p,
   SitePermissionStore store,
   String origin,
-  String connectionMessage,
-) {
+  String connectionMessage, {
+  bool? shieldsOn,
+  ValueChanged<bool>? onShieldsChanged,
+  int blockedCount = 0,
+}) {
+  var shields = shieldsOn;
   return showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -106,6 +110,26 @@ Future<void> showSiteInfoDialog(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(connectionMessage, style: TextStyle(color: p.muted, fontSize: 12.5, height: 1.4)),
+                if (shields != null) ...[
+                  const Divider(height: 24),
+                  StatefulBuilder(
+                    builder: (context, setShields) => SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text('Block trackers and ads on this site',
+                          style: TextStyle(color: p.ink, fontSize: 13.5)),
+                      subtitle: Text(
+                        '$blockedCount blocked this session. Also covers the deceptive-site warning.',
+                        style: TextStyle(color: p.muted, fontSize: 11.5),
+                      ),
+                      value: shields!,
+                      onChanged: (v) {
+                        setShields(() => shields = v);
+                        onShieldsChanged?.call(v);
+                      },
+                    ),
+                  ),
+                ],
                 const Divider(height: 24),
                 Text('Permissions', style: TextStyle(color: p.ink, fontWeight: FontWeight.w700)),
                 if (store.isPrivate)
@@ -229,6 +253,59 @@ Future<void> showSitePermissionsManager(
         ),
       ),
       actions: [TextButton(autofocus: true, onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
+    ),
+  );
+}
+
+/// Global privacy shield switches.
+Future<void> showShieldsSettings(
+  BuildContext context,
+  BrowserPalette p, {
+  required bool httpsOnly,
+  required bool trackers,
+  required bool malware,
+  required void Function(bool httpsOnly, bool trackers, bool malware) onChanged,
+}) {
+  var h = httpsOnly, t = trackers, m = malware;
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        Widget row(String title, String sub, bool v, ValueChanged<bool> set) => SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(title, style: TextStyle(color: p.ink, fontSize: 14)),
+          subtitle: Text(sub, style: TextStyle(color: p.muted, fontSize: 12)),
+          value: v,
+          onChanged: (x) {
+            setState(() => set(x));
+            onChanged(h, t, m);
+          },
+        );
+        return AlertDialog(
+          backgroundColor: p.chrome,
+          surfaceTintColor: Colors.transparent,
+          title: Semantics(
+            header: true,
+            child: Text('Privacy and security', style: TextStyle(color: p.ink, fontWeight: FontWeight.w700)),
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                row('HTTPS-only mode', 'Upgrade http:// pages to https://. If a site has no HTTPS you are asked before using HTTP.', h, (x) => h = x),
+                row('Block trackers and ads', 'EasyList and EasyPrivacy rules, applied to every request. Lists refresh weekly.', t, (x) => t = x),
+                row('Warn about deceptive sites', 'Blocks pages listed by abuse.ch URLhaus as distributing malware.', m, (x) => m = x),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Cinder sends no telemetry.', style: TextStyle(color: p.muted, fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+          actions: [TextButton(autofocus: true, onPressed: () => Navigator.pop(ctx), child: const Text('Done'))],
+        );
+      },
     ),
   );
 }

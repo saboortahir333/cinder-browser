@@ -1,4 +1,0 @@
-[build]
-# Required to unlock the unstable HTTP/3 (QUIC) feature in reqwest 0.12.
-# See: https://docs.rs/reqwest/latest/reqwest/#optional-features
-rustflags = ["--cfg", "reqwest_unstable"]

@@ -3,7 +3,7 @@
 Target file after approval: `D:\saboor_browser\CINDER_MASTER_PLAN.md` (plan mode blocks writing there now).
 
 ## Context
-Cinder today = Flutter/Dart shell (`lib/main.dart`, 4,137-line monolith) + WebView2 (Chromium) renderer + Rust core (`rust/src/api/simple.rs`: reqwest/rustls, hickory DoH/DoT, x509) via flutter_rust_bridge + Supabase sync + Inno Setup installer. The user also wants a **custom, self-owned engine**. Existing `web_browser_project_plan_revised.md` assumes a wrapper; this plan supersedes it by running two tracks:
+Cinder today = Flutter/Dart shell (`lib/main.dart`, 4,137-line monolith) + WebView2 (Chromium) renderer + Rust core (`rust/src/api/adblock_engine.rs`: Brave `adblock` request matching) via flutter_rust_bridge + Supabase sync + Inno Setup installer. The user also wants a **custom, self-owned engine**. Existing `web_browser_project_plan_revised.md` assumes a wrapper; this plan supersedes it by running two tracks:
 
 - **Track A – Product**: harden and finish the WebView2-based browser (ships, earns users).
 - **Track B – Engine ("Cinder Engine")**: new Rust workspace, grown in stages, plugged into the shell behind an `EngineAdapter` interface; WebView2 stays the fallback forever until parity.
@@ -29,7 +29,7 @@ rust/ workspace
 - Audit: run `flutter analyze`, `flutter test`, `cargo test`, `cargo clippy`; record baseline in `docs/implementation-status.md`.
 - Repo cleanup: delete `main.dart.bak`, `inno_setup*.exe`, `node_modules` (if unused); add `.gitignore`; **`git init`** (project has no VCS) + CI (GitHub Actions: analyze/test/build).
 - Merge the two plan docs into this one; archive the old ones.
-- Verify claimed features actually work (DoH/DoT does not apply to WebView2's own network stack — confirm; if so, label honestly or route via proxy).
+- DONE: placebo PQC/DoH claims and code removed (WebView2 owns TLS/DNS; Cinder makes no such claims).
 - Exit gate: green baseline, git history, status doc.
 
 ## Phase 1 — Architecture refactor (2–3 wks)

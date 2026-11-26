@@ -16,7 +16,15 @@ Cinder is a desktop browser built on Microsoft Edge WebView2.
 * The WebView2 engine itself is Microsoft's; see Microsoft's privacy statement
   for engine-level behaviour.
 
-Cinder does not include analytics or advertising.
+Cinder does not include analytics, advertising or telemetry. If diagnostics are
+ever added they will be opt-in only (off by default) and never active in private
+windows.
+
+## Tracker blocking and safety lists
+Cinder downloads public filter lists (EasyList and EasyPrivacy from easylist.to,
+and the abuse.ch URLhaus host list) about once a week. The request contains no
+account or browsing data; the list hosts can see your IP address. Matching runs
+locally.
 
 ## Update check
 Once a day (not in private windows) Cinder asks GitHub's public API whether a

@@ -46,6 +46,11 @@ import 'package:saboor_browser/services/settings_sync_service.dart';
 import 'package:saboor_browser/utils/constants.dart';
 import 'package:saboor_browser/security/site_permissions.dart';
 import 'package:saboor_browser/ui/site_permissions_ui.dart';
+import 'package:saboor_browser/security/filter_lists.dart';
+import 'package:saboor_browser/security/request_filter.dart';
+import 'package:saboor_browser/security/request_policy.dart';
+import 'package:saboor_browser/security/page_messages.dart';
+import 'package:saboor_browser/src/rust/api/adblock_engine.dart' as rust_adblock;
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -533,6 +538,103 @@ class _BrowserShellState extends State<BrowserShell>
     return completer.future;
   }
 
+  final RequestPolicy _requestPolicy = RequestPolicy();
+  RequestFilter? _requestFilter;
+  final FilterLists _filterLists = FilterLists();
+  final Completer<void> _webviewUp = Completer<void>();
+  final Completer<void> _shieldsReady = Completer<void>();
+
+  /// Starts HTTPS-only, tracker blocking and the deceptive-site list once the
+  /// first WebView exists (its DevTools port is what the filter attaches to).
+  Future<void> _startShields() async {
+    try {
+      _requestPolicy.httpsOnly = await PrefsStore.instance.getBool('shield_https_only') ?? true;
+      _requestPolicy.blockTrackers = await PrefsStore.instance.getBool('shield_trackers') ?? true;
+      _requestPolicy.blockMalware = await PrefsStore.instance.getBool('shield_malware') ?? true;
+      _requestPolicy.malwareHosts = await _filterLists.loadCached();
+      _requestPolicy.matcher = (url, src, type) =>
+          rust_adblock.adblockShouldBlock(url: url, sourceUrl: src, requestType: type);
+      final port = AppServices.launch.devToolsPort;
+      if (port != 0) {
+        await _webviewUp.future.timeout(const Duration(seconds: 10), onTimeout: () {});
+        final f = RequestFilter(port: port, policy: _requestPolicy);
+        if (await f.start()) {
+          _requestFilter = f;
+        }
+      }
+      if (!_shieldsReady.isCompleted) _shieldsReady.complete();
+      if (await _filterLists.refreshIfStale() && mounted) {
+        _requestPolicy.malwareHosts = await _filterLists.loadCached();
+      }
+    } catch (_) {
+      // Shields degrade silently; browsing keeps working.
+    } finally {
+      if (!_shieldsReady.isCompleted) _shieldsReady.complete();
+    }
+  }
+
+  bool _shieldsOnFor(String url) {
+    final h = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    return !_requestPolicy.shieldsOff.contains(h);
+  }
+
+  void _setShieldsFor(String url, bool on) {
+    final h = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    if (h.isEmpty) return;
+    if (on) {
+      _requestPolicy.shieldsOff.remove(h);
+    } else {
+      _requestPolicy.shieldsOff.add(h);
+    }
+    _activeTab?.controller.reload();
+  }
+
+  Future<void> _showShieldsSettingsDialog() => showShieldsSettings(
+    context,
+    _palette,
+    httpsOnly: _requestPolicy.httpsOnly,
+    trackers: _requestPolicy.blockTrackers,
+    malware: _requestPolicy.blockMalware,
+    onChanged: (h, t, m) {
+      _requestPolicy.httpsOnly = h;
+      _requestPolicy.blockTrackers = t;
+      _requestPolicy.blockMalware = m;
+      unawaited(PrefsStore.instance.setBool('shield_https_only', h));
+      unawaited(PrefsStore.instance.setBool('shield_trackers', t));
+      unawaited(PrefsStore.instance.setBool('shield_malware', m));
+    },
+  );
+
+  /// An HTTPS-only upgrade failed to load: let the user decide about HTTP.
+  Future<void> _offerInsecureFallback(_BrowserTab tab) async {
+    final u = Uri.tryParse(tab.url);
+    if (u == null || u.scheme != 'https') return;
+    final host = u.host.toLowerCase();
+    if (!_requestPolicy.upgraded.contains(host) || _requestPolicy.insecureOk.contains(host)) return;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _palette.chrome,
+        surfaceTintColor: Colors.transparent,
+        title: Text('No secure connection to $host',
+            style: TextStyle(color: _palette.ink, fontWeight: FontWeight.w700)),
+        content: Text(
+          'This site does not seem to support HTTPS. Opening it over HTTP means anyone on '
+          'your network could read or change what you see and send. Do not enter passwords or payment details.',
+          style: TextStyle(color: _palette.muted),
+        ),
+        actions: [
+          TextButton(autofocus: true, onPressed: () => Navigator.pop(ctx, false), child: const Text('Go back')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Continue to HTTP')),
+        ],
+      ),
+    );
+    if (go == true) {
+      _requestPolicy.insecureOk.add(host);
+      unawaited(tab.controller.loadUrl(u.replace(scheme: 'http').toString()));
+    }
+  }
+
   void _showSiteInfo(_BrowserTab tab) {
     final origin = SitePermissionStore.originOf(tab.url);
     if (origin == null) return;
@@ -542,6 +644,9 @@ class _BrowserShellState extends State<BrowserShell>
       _sitePerms,
       origin,
       _connectionSecurityMessage(tab),
+      shieldsOn: _shieldsOnFor(tab.url),
+      onShieldsChanged: (on) => _setShieldsFor(tab.url, on),
+      blockedCount: _requestFilter?.blockedByHost[Uri.tryParse(tab.url)?.host ?? ''] ?? 0,
     ));
   }
 
@@ -634,6 +739,7 @@ class _BrowserShellState extends State<BrowserShell>
     unawaited(_loadHistoryCache());
     unawaited(_initExtensions());
     unawaited(_sitePerms.load());
+    unawaited(_startShields());
     // Fetch download history from Supabase (Zero local SQLite / disk cache)
     unawaited(DownloadService.instance.initialize());
 
@@ -2859,6 +2965,7 @@ class _BrowserShellState extends State<BrowserShell>
     _urlController.dispose();
     _urlFocusNode.dispose();
     _shellFocusNode.dispose();
+    _requestFilter?.dispose();
     unawaited(_devToolsController?.dispose() ?? Future<void>.value());
     for (final tab in _tabs) {
       unawaited(tab.dispose());
@@ -2904,6 +3011,10 @@ class _BrowserShellState extends State<BrowserShell>
 
     try {
       await tab.controller.initialize();
+      if (!_webviewUp.isCompleted) _webviewUp.complete();
+      // Hold the very first navigation until request filtering is attached
+      // (bounded wait: a broken filter must never block browsing).
+      await _shieldsReady.future.timeout(const Duration(seconds: 5), onTimeout: () {});
       await tab.controller.setDefaultContextMenusEnabled(false);
       await tab.controller.setPopupWindowPolicy(WebviewPopupWindowPolicy.deny);
       tab.downloadSubscription = tab.controller.onDownloadEvent.listen(
@@ -2964,6 +3075,7 @@ class _BrowserShellState extends State<BrowserShell>
         if (!mounted) return;
         tab.error = 'Page load failed: ${error.name}';
         setState(() {});
+        unawaited(_offerInsecureFallback(tab));
       });
 
       if (mounted) setState(() {});
@@ -3004,39 +3116,25 @@ class _BrowserShellState extends State<BrowserShell>
   final GlobalKey _pageKey = GlobalKey();
 
   void _onPageMessage(_BrowserTab tab, dynamic message) {
-    if (message is String) {
-      try {
-        message = jsonDecode(message);
-      } catch (_) {
-        return;
-      }
-    }
-    // Page content fully controls this message: validate every field and
-    // never trust types, ranges or sizes.
-    if (message is! Map || message['cinderContext'] != true) return;
+    // Page content fully controls this message: PageMessages is the single
+    // whitelist (one type, http(s) senders only, strict shapes and sizes).
+    final msg = PageMessages.parseContext(message, senderUrl: tab.url);
+    if (msg == null) return;
     if (!mounted || !identical(_activeTab, tab)) return;
-    final x = message['x'];
-    final y = message['y'];
-    if (x is! num || y is! num || !x.isFinite || !y.isFinite) return;
     final box = _pageKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final size = box.size;
-    final dx = x.toDouble().clamp(0.0, size.width);
-    final dy = y.toDouble().clamp(0.0, size.height);
+    final dx = msg.x.clamp(0.0, size.width);
+    final dy = msg.y.clamp(0.0, size.height);
     final origin = box.localToGlobal(Offset.zero);
-    String text(Object? v, int max) {
-      if (v is! String) return '';
-      return v.length > max ? v.substring(0, max) : v;
-    }
-
     unawaited(
       _showWebContextMenu(
         tab,
         origin + Offset(dx, dy),
-        link: text(message['link'], 4096),
-        image: text(message['image'], 4096),
-        selection: text(message['selection'], 500),
-        editable: message['editable'] == true,
+        link: msg.link,
+        image: msg.image,
+        selection: msg.selection,
+        editable: msg.editable,
       ),
     );
   }
@@ -4954,6 +5052,8 @@ class _BrowserShellState extends State<BrowserShell>
             unawaited(_showExtensionsDialog());
           case 'site-permissions':
             unawaited(showSitePermissionsManager(context, _palette, _sitePerms));
+          case 'shields':
+            unawaited(_showShieldsSettingsDialog());
           case 'appearance':
             unawaited(_showAppearanceSettings());
           case 'search-engine':
@@ -4999,6 +5099,7 @@ class _BrowserShellState extends State<BrowserShell>
           item('downloads', Icons.download_rounded, 'Downloads', 'Ctrl+J'),
           item('extensions', Icons.extension_outlined, 'Extensions'),
           item('site-permissions', Icons.shield_outlined, 'Site permissions'),
+          item('shields', Icons.security_rounded, 'Privacy and security'),
           const PopupMenuDivider(),
           item('find', Icons.search_rounded, 'Find in page…', 'Ctrl+F'),
           item('print', Icons.print_outlined, 'Print…', 'Ctrl+P'),

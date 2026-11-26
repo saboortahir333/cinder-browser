@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 4 * * 1'   # weekly: new advisories appear without code changes
+
+permissions:
+  contents: read
+
+jobs:
+  dart:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+      - name: Supply-chain checks
+        run: |
+          cargo install --locked cargo-audit cargo-deny
+          cargo audit
+          cargo deny check
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install --locked cargo-fuzz
+      - name: Short fuzz run (60 s per target)
+        working-directory: rust
+        run: |
+          cargo +nightly fuzz run adblock_request -- -max_total_time=60
+          cargo +nightly fuzz run adblock_rules -- -max_total_time=60

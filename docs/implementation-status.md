@@ -15,7 +15,7 @@
 - `lib/src/rust/`: generated `flutter_rust_bridge` bindings.
 - `test/`: `widget_test.dart` (shell smoke tests), `download_paths_test.dart` (download naming unit tests).
 - `windows/runner/`: Native C++ application host, containing custom WebView2 bridges (`extension_channel.cpp`, `flutter_window.cpp`).
-- `rust/`, `rust_builder/`: Rust codebase for Post-Quantum Cryptography (PQC) probes and security checks.
+- `rust/`, `rust_builder/`: Rust crate wrapping Brave's `adblock` engine (EasyList/EasyPrivacy matching) via flutter_rust_bridge. The old PQC/DoH probe code was removed: it never affected real traffic.
 - `Output/`: Inno Setup compiled installer artifacts (`CinderBrowser_Setup.exe`).
 
 ## 3. Current Build and Test Status
@@ -37,12 +37,10 @@ Environment: Flutter 3.44.2 (stable), Dart 3.12.2, Windows x64.
 - Download destination flow migrated to the `file_picker` 13.x API (URL prompt → folder picker → collision-safe derived file name).
 - Appearance Settings (Themes, 4K Wallpapers).
 - C++ bridge for unpacking extensions to WebView2.
-- Experimental Rust PQC Probe for hybrid X25519 + ML-KEM-768 handshakes.
 - **Decomposition pass 1:** models, services and constants extracted out of `main.dart` into `lib/models/`, `lib/services/`, `lib/utils/`.
 - **Test suite green:** `flutter test` passes 13/13, including new unit tests for download file naming.
 
 ### Incomplete / Not Started
-- **PQC Full Integration:** The Rust probe works, but real WebView2 traffic is not yet strictly routed through the Rust PQC layer.
 - **Extension Management UI:** The Flutter UI for installing/disabling extensions does not exist yet (only the C++ backend is ready).
 - **Tab Groups & Workspaces.**
 - **Developer Tools & Offline Research Workspace.**
@@ -59,7 +57,6 @@ Environment: Flutter 3.44.2 (stable), Dart 3.12.2, Windows x64.
 ### Open
 - **Monolithic `main.dart`:** ~3.5k lines remain. Models, services and constants are extracted, but the UI (dialogs, start page, toolbar, tab strip) is still inline in one class. This remains the top maintainability risk.
 - **Supabase Dependency:** Hardcoding Supabase for core browser functions (Downloads, History) means the browser is effectively broken without internet access.
-- **PQC Probe Disconnect:** The Rust security probe works, but the WebView2 engine uses its own Windows TLS stack, which means the "Hybrid PQC" toggle in the UI is essentially a placebo for actual web traffic.
 - **WebView2 Limitations:** Deep network interception and custom TLS handshakes are notoriously difficult with WebView2 without using a local proxy architecture.
 - **`withOpacity` deprecations:** ~25 `info`-level findings on `main.dart`; migrate to `withValues(alpha: ...)`.
 - **Tests are shallow:** only shell smoke tests plus pure-function unit tests exist; no coverage of navigation, tabs, or service behaviour.
@@ -69,7 +66,6 @@ Environment: Flutter 3.44.2 (stable), Dart 3.12.2, Windows x64.
 1. **Finish the refactor (in progress):** pass 1 moved models/services/utils out of `main.dart`; pass 2 should move the UI out (empty `lib/ui/` is already scaffolded).
 2. **Offline Resilience:** Implement local SQLite caches for History and Bookmarks so the browser functions without an active Supabase connection.
 3. **Extensions UI:** Build the Flutter interface to manage extensions installed via the C++ bridge.
-4. **PQC Proxy Architecture:** If real PQC is required for web traffic, implement a local Rust HTTP/SOCKS5 proxy that WebView2 routes through.
 5. **Tab Groups & Workspaces.**
 6. **Housekeeping:** migrate `withOpacity` → `withValues(alpha: ...)` and widen test coverage.
 
@@ -92,3 +88,19 @@ Pass 1 is complete: models, services, constants and the download path helpers no
   - `flutter build windows --release` compiles successfully (still outstanding from the previous session).
   - No user-visible behaviour change: tabs, omnibox, downloads, appearance settings and the start page all still work.
 
+
+
+## Security and privacy (Tier 2)
+
+| Feature | Status |
+|---|---|
+| Per-origin permission prompts (camera, mic, location, notifications, clipboard) | Done. Secure origins only, remembered per site (encrypted sync), revocable from the lock icon and Menu > Site permissions, never remembered in private windows. Extension popups and DevTools are denied everything. |
+| HTTPS-only mode | Done, on by default. http:// documents are upgraded through the DevTools-protocol request filter; a failed upgrade asks before using HTTP. Loopback/LAN/intranet names are exempt. |
+| Mixed content / certificate errors | Handled natively by WebView2 (active mixed content blocked, native interstitial for bad certificates). Cinder adds no custom bypass. |
+| Tracker and ad blocking | Done, on by default, per-site off switch. Rust `adblock` engine, EasyList + EasyPrivacy fetched weekly (built-in fallback list offline). |
+| Deceptive-site warning | Done as a local host list (abuse.ch URLhaus), not Google Safe Browsing. |
+| Chrome vs content isolation | One whitelisted page-to-chrome message type, http(s) senders only, strict validation (`lib/security/page_messages.dart`). |
+| Threat model, supply chain, fuzzing | `docs/threat-model.md`; CI runs `cargo audit`, `cargo deny`, `cargo fuzz` and Dart fuzz-style tests. |
+| Telemetry | None exists. `TelemetryConsent` gates any future reporting: opt-in only, never in private windows. |
+
+Known limits: the request filter uses the window's loopback DevTools port, which any local process can reach (see the threat model); filtering starts when the first WebView is ready (the first navigation waits up to 5 s for it); service-worker and extension background traffic is filtered like any other request, but cosmetic (element-hiding) filters are not applied yet.

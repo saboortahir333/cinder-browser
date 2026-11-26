@@ -6,9 +6,11 @@ A Windows desktop browser built with Flutter and Microsoft Edge WebView2.
 * End-to-end encrypted sync of bookmarks, history and settings (Supabase)
 * Manifest V3 extensions (content scripts, toolbar popups, permission prompts)
 * Firefox-style UI, high-contrast and keyboard-only support
+* HTTPS-only mode, tracker and ad blocking, per-site permission prompts
 
 Docs: [security & data model](docs/security-and-data-model.md) ·
 [extensions & accessibility](docs/extensions-and-accessibility.md) ·
+[threat model](docs/threat-model.md) ·
 [code signing](docs/signing-with-signpath.md)
 
 ## Build

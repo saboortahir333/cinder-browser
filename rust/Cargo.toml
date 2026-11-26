@@ -9,12 +9,7 @@ crate-type = ["cdylib", "staticlib"]
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
 
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots", "http2", "http3", "charset", "hickory-dns"] }
-rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
-webpki-roots = "1"
-tokio = { version = "1", features = ["full"] }
-hickory-resolver = { version = "0.24", features = ["dns-over-https-rustls", "dns-over-rustls"] }
-x509-parser = "0.16"
+adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
