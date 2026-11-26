@@ -33,10 +33,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     random_value = ::GetTickCount();
   }
   const std::string devtools_port = std::to_string(49152 + (random_value % 16000));
-  const std::string browser_args =
+  // Escape hatch for PCs where the GPU/driver leaves web pages blank:
+  //   setx CINDER_DISABLE_GPU 1   (then restart Cinder)
+  char* disable_gpu = nullptr;
+  size_t disable_gpu_len = 0;
+  const bool software_render =
+      _dupenv_s(&disable_gpu, &disable_gpu_len, "CINDER_DISABLE_GPU") == 0 &&
+      disable_gpu != nullptr && disable_gpu[0] == '1';
+  free(disable_gpu);
+  std::string browser_args =
       "--remote-debugging-port=" + devtools_port +
       " --remote-debugging-address=127.0.0.1"
       " --remote-allow-origins=http://127.0.0.1:" + devtools_port;
+  if (software_render) browser_args += " --disable-gpu --disable-gpu-compositing";
   ::_putenv_s("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", browser_args.c_str());
 
   flutter::DartProject project(L"data");
