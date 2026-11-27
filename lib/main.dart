@@ -14,6 +14,9 @@ import 'package:saboor_browser/ui/chrome/tab_chip.dart';
 import 'package:saboor_browser/diagnostics/perf_benchmark.dart';
 import 'package:saboor_browser/diagnostics/perf_hud.dart';
 import 'package:saboor_browser/diagnostics/perf_probe.dart';
+import 'package:saboor_browser/rendering/compat_mode.dart';
+import 'package:saboor_browser/rendering/compat_page_view.dart';
+import 'package:saboor_browser/rendering/compat_service.dart';
 import 'package:saboor_browser/ui/start/start_widgets.dart';
 import 'package:saboor_browser/ui/wallpapers/cinder_wallpapers.dart';
 import 'package:saboor_browser/src/rust/frb_generated.dart';
@@ -489,6 +492,55 @@ class _BrowserShellState extends State<BrowserShell>
   bool _perfHudOpen = false;
   final ValueNotifier<String?> _benchmarkStatus = ValueNotifier<String?>(null);
   bool _benchmarkCancelled = false;
+
+  // Compatibility rendering: draws pages from the engine's own frames on PCs
+  // where the default frame capture comes up blank (Remote Desktop, software
+  // GPU). Local-only preference: it depends on the machine, not the account.
+  CompatPreference _compatPreference = CompatPreference.auto;
+  final bool _remoteSession = isRemoteSession();
+  CompatRenderService? _compatService;
+
+  bool get _compatActive => shouldUseCompat(
+    _compatPreference,
+    remoteSession: _remoteSession,
+    softwareGpu: softwareRenderingRequested(),
+    canAttach: AppServices.launch.devToolsPort != 0,
+  );
+
+  Future<void> _loadCompatPreference() async {
+    try {
+      final v = await _prefs.getString('rendering.compat');
+      if (mounted && v != null) {
+        setState(() => _compatPreference = CompatPreference.parse(v));
+      }
+    } catch (_) {}
+  }
+
+  /// Menu action: auto -> on -> off -> auto.
+  Future<void> _cycleCompatRendering() async {
+    final next = switch (_compatPreference) {
+      CompatPreference.auto => CompatPreference.on,
+      CompatPreference.on => CompatPreference.off,
+      CompatPreference.off => CompatPreference.auto,
+    };
+    setState(() => _compatPreference = next);
+    if (!_compatActive) {
+      await _compatService?.dispose();
+      _compatService = null;
+    }
+    final label = switch (next) {
+      CompatPreference.auto =>
+        'Compatibility rendering: automatic (${_compatActive ? 'on for this session' : 'off'})',
+      CompatPreference.on => 'Compatibility rendering: on',
+      CompatPreference.off => 'Compatibility rendering: off',
+    };
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(label)));
+    }
+    try {
+      await _prefs.setString('rendering.compat', next.storageValue);
+    } catch (_) {}
+  }
   final Map<String, TabGroupSnapshot> _groups = {};
   SiteZoomMemory _siteZoom = SiteZoomMemory();
   Timer? _sessionSaveTimer;
@@ -834,6 +886,7 @@ class _BrowserShellState extends State<BrowserShell>
     WidgetsBinding.instance.addObserver(this);
     _scheduleMidnightRefresh();
     unawaited(_loadWallpaper());
+    unawaited(_loadCompatPreference());
     unawaited(
       _createTab(
         url: AppServices.launch.startUrl,
@@ -3060,6 +3113,7 @@ class _BrowserShellState extends State<BrowserShell>
     _benchmarkCancelled = true;
     PerfProbe.instance.stop();
     _benchmarkStatus.dispose();
+    unawaited(_compatService?.dispose());
     _saveSessionNow();
     unawaited(AppServices.cloud.flush());
     if (_isPrivate) {
@@ -5202,6 +5256,8 @@ class _BrowserShellState extends State<BrowserShell>
             unawaited(_openDevTools());
           case 'perf':
             _togglePerfHud();
+          case 'compat':
+            unawaited(_cycleCompatRendering());
           case 'import-bookmarks':
             unawaited(_importBookmarks());
           case 'default-browser':
@@ -5279,6 +5335,16 @@ class _BrowserShellState extends State<BrowserShell>
           item('search-engine', Icons.manage_search_rounded, 'Search engine…'),
           item('devtools', Icons.code_rounded, 'Developer tools', 'F12'),
           item('perf', Icons.speed_rounded, 'Performance monitor'),
+          item(
+            'compat',
+            Icons.layers_outlined,
+            'Compatibility rendering',
+            switch (_compatPreference) {
+              CompatPreference.auto => _compatActive ? 'Auto · on' : 'Auto',
+              CompatPreference.on => 'On',
+              CompatPreference.off => 'Off',
+            },
+          ),
           const PopupMenuDivider(),
           item('import-bookmarks', Icons.file_upload_outlined, 'Import bookmarks…'),
           item('default-browser', Icons.open_in_browser_rounded, 'Make Cinder your default browser'),
@@ -5478,7 +5544,7 @@ class _BrowserShellState extends State<BrowserShell>
     }
     // RepaintBoundary isolates the webview from parent repaints caused by
     // toolbar / tab-strip / bookmark-bar setState calls — eliminates jank.
-    return RepaintBoundary(
+    final page = RepaintBoundary(
       child: SizedBox.expand(
         key: _pageKey,
         child: Webview(
@@ -5487,6 +5553,43 @@ class _BrowserShellState extends State<BrowserShell>
           permissionRequested: _onPermissionRequested,
         ),
       ),
+    );
+    if (!_compatActive) return page;
+
+    // Compatibility rendering: the normal Webview stays mounted underneath
+    // (it keeps WebView2 sized to this area) and the engine's own frames are
+    // drawn on top, with input sent back over DevTools.
+    final service = _compatService ??= CompatRenderService(
+      port: AppServices.launch.devToolsPort,
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        page,
+        Positioned.fill(
+          child: CompatPageView(
+            key: ValueKey('compat-${tab.id}'),
+            service: service,
+            tabId: tab.id,
+            url: tab.url,
+            // Read tab.controller when called: a woken tab gets a new one.
+            mark: (marker) async {
+              // Keeps the page's own window.name after the bar; it is put
+              // back as soon as the tab has been found.
+              await tab.controller.executeScript(
+                "if(!window.name.startsWith('$marker|'))"
+                "window.name='$marker|'+window.name;",
+              );
+            },
+            background: _palette.chrome,
+            foreground: _palette.ink,
+            // The hidden default renderer needn't spend effort on frames.
+            onEngaged: (on) => unawaited(
+              tab.controller.setFpsLimit(on ? 1 : 0).catchError((_) {}),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
