@@ -10,6 +10,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsService;
 import 'package:flutter/services.dart';
 import 'package:saboor_browser/ui/chrome/chrome_widgets.dart';
+import 'package:saboor_browser/ui/chrome/tab_chip.dart';
+import 'package:saboor_browser/diagnostics/perf_benchmark.dart';
+import 'package:saboor_browser/diagnostics/perf_hud.dart';
+import 'package:saboor_browser/diagnostics/perf_probe.dart';
 import 'package:saboor_browser/ui/start/start_widgets.dart';
 import 'package:saboor_browser/ui/wallpapers/cinder_wallpapers.dart';
 import 'package:saboor_browser/src/rust/frb_generated.dart';
@@ -480,6 +484,11 @@ class _BrowserShellState extends State<BrowserShell>
   // --- Tabs, session, zoom, find (all state is in memory; persistence goes
   // through the encrypted cloud store and is skipped in private windows) ---
   final ClosedTabStack _closedTabs = ClosedTabStack();
+
+  // Performance monitor: opt-in, local only, never in private windows.
+  bool _perfHudOpen = false;
+  final ValueNotifier<String?> _benchmarkStatus = ValueNotifier<String?>(null);
+  bool _benchmarkCancelled = false;
   final Map<String, TabGroupSnapshot> _groups = {};
   SiteZoomMemory _siteZoom = SiteZoomMemory();
   Timer? _sessionSaveTimer;
@@ -570,6 +579,87 @@ class _BrowserShellState extends State<BrowserShell>
       // Shields degrade silently; browsing keeps working.
     } finally {
       if (!_shieldsReady.isCompleted) _shieldsReady.complete();
+    }
+  }
+
+  // ----- performance monitor -------------------------------------------------
+
+  void _togglePerfHud() {
+    if (_isPrivate) {
+      _showBlocked('The performance monitor is not available in private windows.');
+      return;
+    }
+    final probe = PerfProbe.instance;
+    setState(() => _perfHudOpen = !_perfHudOpen);
+    if (_perfHudOpen) {
+      probe.devtoolsPort = AppServices.launch.devToolsPort;
+      probe.start();
+    } else {
+      _benchmarkCancelled = true;
+      probe.stop();
+    }
+  }
+
+  /// Loads a few public sites with shields on and off in a dedicated tab, with
+  /// the HTTP cache disabled, and stores the comparison on the probe.
+  Future<void> _runPerfBenchmark() async {
+    if (_benchmarkStatus.value != null || _isPrivate) return;
+    final filter = _requestFilter;
+    if (filter == null || !filter.connected) {
+      _showBlocked(
+        'Shields are not active, so there is nothing to compare. Turn on '
+        'tracker blocking or HTTPS-only mode first.',
+      );
+      return;
+    }
+    final probe = PerfProbe.instance;
+    _benchmarkCancelled = false;
+    _benchmarkStatus.value = 'Preparing…';
+    await _createTab(); // dedicated tab: the user's own pages stay untouched
+    final tab = _activeTab;
+    if (tab == null) {
+      _benchmarkStatus.value = null;
+      return;
+    }
+    final shieldsOffBefore = Set<String>.of(_requestPolicy.shieldsOff);
+    try {
+      await tab.initialization;
+      await tab.controller.setCacheDisabled(true);
+      final result = await PerfBenchmark.run(
+        urls: kBenchmarkUrls,
+        rounds: 3,
+        isCancelled: () => _benchmarkCancelled || !mounted,
+        onProgress: (status) => _benchmarkStatus.value = status,
+        load: (url, {required shieldsOn}) async {
+          final host = Uri.parse(url).host.toLowerCase();
+          if (shieldsOn) {
+            _requestPolicy.shieldsOff.remove(host);
+          } else {
+            _requestPolicy.shieldsOff.add(host);
+          }
+          // Settle on a blank page so the previous site cannot bleed in.
+          final blank = probe.expectLoad(tab.id, timeout: const Duration(seconds: 10));
+          await tab.controller.loadUrl('about:blank');
+          await blank;
+          tab.url = url; // so the probe labels the load with the right shield state
+          final loaded = probe.expectLoad(tab.id, timeout: const Duration(seconds: 45));
+          await tab.controller.loadUrl(url);
+          return (await loaded)?.ms;
+        },
+      );
+      probe.setBenchmark(result);
+    } catch (error) {
+      debugPrint('benchmark failed: ${error.runtimeType}');
+    } finally {
+      _requestPolicy.shieldsOff
+        ..clear()
+        ..addAll(shieldsOffBefore);
+      try {
+        await tab.controller.setCacheDisabled(false);
+      } catch (_) {}
+      if (mounted) _benchmarkStatus.value = null;
+      final index = _tabs.indexOf(tab);
+      if (index >= 0 && mounted) await _closeTab(index);
     }
   }
 
@@ -2967,6 +3057,9 @@ class _BrowserShellState extends State<BrowserShell>
     AppServices.account.removeListener(_onAccountChanged);
     _sessionSaveTimer?.cancel();
     _sleepTimer?.cancel();
+    _benchmarkCancelled = true;
+    PerfProbe.instance.stop();
+    _benchmarkStatus.dispose();
     _saveSessionNow();
     unawaited(AppServices.cloud.flush());
     if (_isPrivate) {
@@ -3071,6 +3164,11 @@ class _BrowserShellState extends State<BrowserShell>
       tab.loadingSubscription = tab.controller.loadingState.listen((state) {
         if (!mounted) return;
         tab.isLoading = state == LoadingState.loading;
+        if (tab.isLoading) {
+          PerfProbe.instance.loadStarted(tab.id, shieldsOn: _shieldsOnFor(tab.url));
+        } else {
+          PerfProbe.instance.loadFinished(tab.id, tab.url);
+        }
         if (!tab.isLoading && identical(_activeTab, tab) && tab.url.isNotEmpty) {
           SemanticsService.sendAnnouncement(
             View.of(context),
@@ -4141,6 +4239,20 @@ class _BrowserShellState extends State<BrowserShell>
                   ),
                 ),
               if (_popup != null) _buildExtensionPopup(),
+              if (_perfHudOpen)
+                Positioned(
+                  right: 14,
+                  bottom: 14,
+                  child: PerfHud(
+                    palette: _palette,
+                    probe: PerfProbe.instance,
+                    benchmarkStatus: _benchmarkStatus,
+                    onClose: _togglePerfHud,
+                    onRunBenchmark: () => unawaited(_runPerfBenchmark()),
+                    onCancelBenchmark: () => _benchmarkCancelled = true,
+                    meta: const {'app': 'Cinder Browser'},
+                  ),
+                ),
             ],
           ),
         ),
@@ -4900,6 +5012,9 @@ class _BrowserShellState extends State<BrowserShell>
               width: listWidth.clamp(0.0, constraints.maxWidth - newTabWidth),
               child: ReorderableListView.builder(
                 scrollDirection: Axis.horizontal,
+                // No default handles: on desktop Flutter paints a "=" grip on
+                // every item. The whole tab is the drag target instead.
+                buildDefaultDragHandles: false,
                 proxyDecorator: (child, index, animation) =>
                     Material(color: Colors.transparent, child: child),
                 itemCount: _tabs.length,
@@ -4942,7 +5057,9 @@ class _BrowserShellState extends State<BrowserShell>
     return Padding(
       key: ValueKey(tab.id),
       padding: const EdgeInsets.only(right: 2),
-      child: Tooltip(
+      child: ReorderableDragStartListener(
+        index: index,
+        child: Tooltip(
         // Blank tabs get no tooltip (it would only repeat "New tab").
         message: tab.savedUrl.isEmpty ? '' : tooltip,
         waitDuration: const Duration(milliseconds: 700),
@@ -4963,7 +5080,12 @@ class _BrowserShellState extends State<BrowserShell>
           onMiddleTap: () => unawaited(_closeTab(index)),
           onSecondaryTapDown: (details) =>
               unawaited(_showTabContextMenu(details.globalPosition, tab)),
+          separator:
+              index < _tabs.length - 1 &&
+              index != _activeTabIndex &&
+              index + 1 != _activeTabIndex,
         ),
+      ),
       ),
     );
   }
@@ -5078,6 +5200,8 @@ class _BrowserShellState extends State<BrowserShell>
             unawaited(showSearchEngineDialog(context, _palette));
           case 'devtools':
             unawaited(_openDevTools());
+          case 'perf':
+            _togglePerfHud();
           case 'import-bookmarks':
             unawaited(_importBookmarks());
           case 'default-browser':
@@ -5154,6 +5278,7 @@ class _BrowserShellState extends State<BrowserShell>
           item('appearance', Icons.palette_outlined, 'Themes & wallpapers'),
           item('search-engine', Icons.manage_search_rounded, 'Search engine…'),
           item('devtools', Icons.code_rounded, 'Developer tools', 'F12'),
+          item('perf', Icons.speed_rounded, 'Performance monitor'),
           const PopupMenuDivider(),
           item('import-bookmarks', Icons.file_upload_outlined, 'Import bookmarks…'),
           item('default-browser', Icons.open_in_browser_rounded, 'Make Cinder your default browser'),
